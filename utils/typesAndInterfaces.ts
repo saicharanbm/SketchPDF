@@ -10,5 +10,9 @@ interface ControlsProps {
   handleZoomIn: () => void;
   handleZoomOut: () => void;
 }
+interface CanvasDimension {
+  width: number;
+  height: number;
+}
 
-export type { PdfViewerProps, ControlsProps };
+export type { PdfViewerProps, ControlsProps, CanvasDimension };

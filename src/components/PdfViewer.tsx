@@ -1,6 +1,9 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { getDocument } from "pdfjs-dist";
-import { PdfViewerProps } from "../../utils/typesAndInterfaces";
+import {
+  CanvasDimension,
+  PdfViewerProps,
+} from "../../utils/typesAndInterfaces";
 import Controls from "./Controls";
 import NavBar from "./NavBar";
 import "pdfjs-dist/web/pdf_viewer.css";
@@ -9,9 +12,14 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
   const [pdf, setPdf] = useState<any>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const PdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const staticCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [zoom, setZoom] = useState<number>(1);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const renderTaskRef = useRef<any>(null);
+  const [canvasDimensions, setCanvasDimensions] = useState<CanvasDimension>({
+    width: 0,
+    height: 0,
+  });
 
   // Load the PDF file
   useEffect(() => {
@@ -28,6 +36,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
     };
     loadPDF();
   }, [pdfFile]);
+  //set the dimentions of drawing canvas
+  useEffect(() => {
+    const staticContext = staticCanvasRef.current?.getContext("2d");
+    if (!staticContext) return;
+    staticContext.canvas.width = canvasDimensions.width;
+    staticContext.canvas.height = canvasDimensions.height;
+  }, [canvasDimensions]);
 
   // Render the current page
   const renderPage = useCallback(async () => {
@@ -44,6 +59,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
       const devicePixelRatio = window.devicePixelRatio || 1;
       const canvasWidth = viewport.width;
       const canvasHeight = viewport.height;
+      setCanvasDimensions({ width: canvasWidth, height: canvasHeight });
 
       // Set canvas dimensions to account for device pixel ratio
       PdfCanvasRef.current.width = canvasWidth * devicePixelRatio;
@@ -111,7 +127,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
         <div className="canvas-wrapper">
           <canvas className="canvas" ref={PdfCanvasRef} />
 
-          <canvas className="canvas canvas-overlay"></canvas>
+          <canvas
+            className="canvas canvas-overlay"
+            ref={staticCanvasRef}
+          ></canvas>
         </div>
       </div>
 
