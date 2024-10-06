@@ -1,50 +1,73 @@
-# React + TypeScript + Vite
+# SketchPDF
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This project is a React-based application that allows users to load PDF documents, annotate them with various drawing tools, and download the annotated version as a PDF file.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **PDF Rendering**: Load and view PDF files within the application.
+- **Zoom Controls**: Increase or decrease the zoom level of the PDF viewer.
+- **Annotation Tools**:
+  - Rectangle
+  - Free-style pencil
+  - Line
+  - Rhombus
+  - Circle/Ellipse
+- **Multi-page Support**: Navigate through different pages of the loaded PDF.
+- **Touch Support**: Drawing and navigation with both mouse and touch inputs.
+- **Download Annotated PDF**: Export the PDF with the annotations as an image overlay.
 
-## Expanding the ESLint configuration
+## Dependencies
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+- [React](https://reactjs.org/)
+- [pdfjs-dist](https://github.com/mozilla/pdf.js) for rendering PDFs.
+- [jsPDF](https://github.com/parallax/jsPDF) for generating PDFs with annotations.
 
-- Configure the top-level `parserOptions` property like this:
+## Installation
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+1. Clone the repository:
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+   ```bash
+   git clone https://github.com/saicharanbm/SketchPDF.git
+   cd pdf-annotator
+   ```
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+2. Install dependencies:
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
-```
+   ```bash
+   npm install
+   ```
+
+3. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+## How to Use
+
+1. **Loading a PDF**:
+
+   - Upload a PDF file to view it in the application.
+
+2. **Zooming**:
+
+   - Use the zoom controls (+ / - buttons) to zoom in and out of the PDF.
+
+3. **Annotating**:
+
+   - Choose a drawing tool from the toolbar (rectangle, line, freehand, rhombus, circle).
+   - Click and drag on the canvas to create the annotation.
+   - Use either the mouse or touch input to annotate.
+
+4. **Navigating Pages**:
+
+   - Use the page navigation controls to move between different pages of the PDF.
+
+5. **Saving the Annotated PDF**:
+   - After making annotations, click on the download button to export the PDF with all the annotations.
+
+## Future Enhancements
+
+- **Eraser Tool**: Add functionality to erase individual annotations.
+- **Text Tool**: Allow users to insert text annotations.
+- **Shape Fill and Stroke Customization**: Add more customization options for annotations.
