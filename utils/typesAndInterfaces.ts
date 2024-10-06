@@ -11,6 +11,7 @@ interface ControlsProps {
   handlePreviousPage: () => void;
   handleZoomIn: () => void;
   handleZoomOut: () => void;
+  downloadPDF: () => void;
 }
 interface CanvasDimension {
   width: number;

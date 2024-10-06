@@ -1,10 +1,10 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { getDocument } from "pdfjs-dist";
+import jsPDF from "jspdf";
 import {
   CanvasDimension,
   PdfViewerProps,
   Tool,
-  Point,
   Element,
 } from "../../utils/typesAndInterfaces";
 import Controls from "./Controls";
@@ -13,7 +13,6 @@ import {
   drawRectangle,
   drawFreeStyle,
   drawLine,
-  drawArrow,
   drawRhombus,
   drawCircle,
 } from "../../utils/draw";
@@ -79,62 +78,65 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile, setPdfFile }) => {
   }, [canvasDimensions]);
 
   // Render the current page
-  const renderPage = useCallback(async () => {
-    if (!pdf || !PdfCanvasRef.current) return;
+  const renderPage = useCallback(
+    async (pageNumber = currentPage) => {
+      if (!pdf || !PdfCanvasRef.current) return;
 
-    const context = PdfCanvasRef.current.getContext("2d");
-    if (!context) return;
+      const context = PdfCanvasRef.current.getContext("2d");
+      if (!context) return;
 
-    try {
-      const page = await pdf.getPage(currentPage);
-      const scale = 1.5 * zoom;
-      const viewport = page.getViewport({ scale });
+      try {
+        const page = await pdf.getPage(pageNumber);
+        const scale = 1.5 * zoom;
+        const viewport = page.getViewport({ scale });
 
-      const devicePixelRatio = window.devicePixelRatio || 1;
-      const canvasWidth = viewport.width;
-      const canvasHeight = viewport.height;
-      setCanvasDimensions({ width: canvasWidth, height: canvasHeight });
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const canvasWidth = viewport.width;
+        const canvasHeight = viewport.height;
+        setCanvasDimensions({ width: canvasWidth, height: canvasHeight });
 
-      // Set canvas dimensions to account for device pixel ratio
-      PdfCanvasRef.current.width = canvasWidth * devicePixelRatio;
-      PdfCanvasRef.current.height = canvasHeight * devicePixelRatio;
+        // Set canvas dimensions to account for device pixel ratio
+        PdfCanvasRef.current.width = canvasWidth * devicePixelRatio;
+        PdfCanvasRef.current.height = canvasHeight * devicePixelRatio;
 
-      // Set CSS width and height for rendering
-      PdfCanvasRef.current.style.width = `${canvasWidth}px`;
-      PdfCanvasRef.current.style.height = `${canvasHeight}px`;
+        // Set CSS width and height for rendering
+        PdfCanvasRef.current.style.width = `${canvasWidth}px`;
+        PdfCanvasRef.current.style.height = `${canvasHeight}px`;
 
-      // Increase the resolution of the image
-      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-      context.clearRect(
-        0,
-        0,
-        PdfCanvasRef.current.width,
-        PdfCanvasRef.current.height
-      ); // Clear the canvas
+        // Increase the resolution of the image
+        context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+        context.clearRect(
+          0,
+          0,
+          PdfCanvasRef.current.width,
+          PdfCanvasRef.current.height
+        ); // Clear the canvas
 
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-      };
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+        };
 
-      // Cancel any previous render task
-      if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
+        // Cancel any previous render task
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+        }
+
+        // Start the new render task
+        renderTaskRef.current = page.render(renderContext);
+
+        // Wait for the rendering to finish
+        await renderTaskRef.current.promise;
+      } catch (error: any) {
+        if (error.name === "RenderingCancelledException") {
+          console.log(`Rendering cancelled for page ${currentPage}`);
+        } else {
+          console.error(`Error rendering page ${currentPage}:`, error);
+        }
       }
-
-      // Start the new render task
-      renderTaskRef.current = page.render(renderContext);
-
-      // Wait for the rendering to finish
-      await renderTaskRef.current.promise;
-    } catch (error: any) {
-      if (error.name === "RenderingCancelledException") {
-        console.log(`Rendering cancelled for page ${currentPage}`);
-      } else {
-        console.error(`Error rendering page ${currentPage}:`, error);
-      }
-    }
-  }, [currentPage, pdf, zoom]);
+    },
+    [currentPage, pdf, zoom]
+  );
 
   // Re-render on zoom/page changes
   useEffect(() => {
@@ -201,6 +203,51 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile, setPdfFile }) => {
     },
     [zoom]
   );
+  // Iterate over each page and combine pdfCanvas and static Canvas into a canvas Image
+  const downloadPDF = async () => {
+    if (!pdf) return;
+
+    const doc = new jsPDF();
+    const devicePixelRatio = window.devicePixelRatio || 1;
+
+    for (let i = 1; i <= numPages; i++) {
+      // Render the page
+      const page = await pdf.getPage(i);
+      const scale = 1.5 * zoom;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context) continue;
+
+      canvas.width = viewport.width * devicePixelRatio;
+      canvas.height = viewport.height * devicePixelRatio;
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport,
+      };
+
+      await page.render(renderContext).promise;
+
+      // Draw annotations
+      const pageElements = elements[i] || [];
+      pageElements.forEach((element) => drawElement(element, context));
+
+      // Add the page to the PDF
+      const imgData = canvas.toDataURL("image/png");
+      const pdfWidth = doc.internal.pageSize.getWidth();
+      const pdfHeight = doc.internal.pageSize.getHeight();
+
+      if (i > 1) {
+        doc.addPage();
+      }
+      doc.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+    }
+
+    // Save the final PDF
+    doc.save("annotated.pdf");
+  };
 
   useEffect(() => {
     if (!staticContext || !staticCanvasRef.current) return;
@@ -453,6 +500,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile, setPdfFile }) => {
         handlePreviousPage={handlePreviousPage}
         handleZoomIn={handleZoomIn}
         handleZoomOut={handleZoomOut}
+        downloadPDF={downloadPDF}
       />
     </>
   );
