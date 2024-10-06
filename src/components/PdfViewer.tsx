@@ -3,16 +3,30 @@ import { getDocument } from "pdfjs-dist";
 import {
   CanvasDimension,
   PdfViewerProps,
+  Tool,
+  Point,
+  Element,
 } from "../../utils/typesAndInterfaces";
 import Controls from "./Controls";
 import NavBar from "./NavBar";
-import "pdfjs-dist/web/pdf_viewer.css";
+import {
+  drawRectangle,
+  drawFreeStyle,
+  drawLine,
+  drawArrow,
+  drawRhombus,
+  drawCircle,
+} from "../../utils/draw";
+import { set } from "lodash";
 
-const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
+const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile, setPdfFile }) => {
   const [pdf, setPdf] = useState<any>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const PdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const staticCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dynamicCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [drawing, setDrawing] = useState<boolean>(false);
+  const [tool, setTool] = useState<Tool>("rectangle");
   const [zoom, setZoom] = useState<number>(1);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const renderTaskRef = useRef<any>(null);
@@ -20,7 +34,14 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
     width: 0,
     height: 0,
   });
-
+  const [elements, setElements] = useState<{ [pageNumber: number]: Element[] }>(
+    {}
+  );
+  const [tempElement, setTempElement] = useState<Partial<Element>>({});
+  const [staticContext, setStaticContext] =
+    useState<CanvasRenderingContext2D | null>(null);
+  const [dynamicContext, setDynamicContext] =
+    useState<CanvasRenderingContext2D | null>(null);
   // Load the PDF file
   useEffect(() => {
     const loadPDF = async () => {
@@ -36,12 +57,25 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
     };
     loadPDF();
   }, [pdfFile]);
+  const closeDocument = () => {
+    setPdf(null);
+    setNumPages(0);
+    setElements({});
+    setTempElement({});
+    setPdfFile(null);
+  };
   //set the dimentions of drawing canvas
   useEffect(() => {
     const staticContext = staticCanvasRef.current?.getContext("2d");
-    if (!staticContext) return;
+    const dynamicContext = dynamicCanvasRef.current?.getContext("2d");
+
+    if (!(staticContext && dynamicContext)) return;
+    setStaticContext(staticContext);
+    setDynamicContext(dynamicContext);
     staticContext.canvas.width = canvasDimensions.width;
     staticContext.canvas.height = canvasDimensions.height;
+    dynamicContext.canvas.width = canvasDimensions.width;
+    dynamicContext.canvas.height = canvasDimensions.height;
   }, [canvasDimensions]);
 
   // Render the current page
@@ -113,20 +147,297 @@ const PdfViewer: React.FC<PdfViewerProps> = ({ pdfFile }) => {
   const handleZoomOut = () =>
     setZoom((prevZoom) => Math.max(prevZoom - 0.25, 0.5));
 
+  // draw elements on canvas
+  const drawElement = useCallback(
+    function (
+      element: Element,
+      context: CanvasRenderingContext2D,
+      temp: boolean = false
+    ) {
+      if (!element.points || element.points.length === 0) return;
+      context.save();
+      context.beginPath();
+      context.lineWidth = 2 * zoom;
+      context.strokeStyle = "#000";
+
+      const adjustedPoints = element.points.map((point) => ({
+        x: point.x * zoom,
+        y: point.y * zoom,
+      }));
+
+      switch (element.type) {
+        case "pencil":
+          drawFreeStyle({ ...element, points: adjustedPoints }, context, temp);
+          break;
+        case "rectangle": {
+          if (adjustedPoints.length < 2) return;
+          const [start, end] = adjustedPoints;
+          drawRectangle(start, end, context);
+          break;
+        }
+        case "line": {
+          if (adjustedPoints.length < 2) return;
+          const [lineStart, lineEnd] = adjustedPoints;
+          drawLine(lineStart, lineEnd, context);
+          break;
+        }
+        case "ellipse": {
+          if (adjustedPoints.length < 2) return;
+          const [start, end] = adjustedPoints;
+          drawCircle(context, start, end);
+          break;
+        }
+        case "rhombus": {
+          if (adjustedPoints.length < 2) return;
+          const [start, end] = adjustedPoints;
+          drawRhombus(context, start, end);
+          break;
+        }
+      }
+
+      context.stroke();
+      context.closePath();
+      context.restore();
+    },
+    [zoom]
+  );
+
+  useEffect(() => {
+    if (!staticContext || !staticCanvasRef.current) return;
+
+    const pageElements = elements[currentPage] || [];
+    staticContext.clearRect(
+      0,
+      0,
+      staticCanvasRef.current.width,
+      staticCanvasRef.current.height
+    );
+    pageElements.forEach((element) => drawElement(element, staticContext));
+  }, [
+    staticContext,
+    elements,
+    currentPage,
+    zoom,
+    drawElement,
+    canvasDimensions,
+  ]);
+
+  // Screen to world coordinates
+  const screenToWorldCoordinates = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement> | TouchEvent) => {
+      const canvas = staticCanvasRef.current; // Assuming you want to get coordinates for the static canvas
+      if (!canvas) return { x: 0, y: 0 };
+
+      const rect = canvas.getBoundingClientRect(); // Get canvas position and size
+
+      const x =
+        (e instanceof TouchEvent
+          ? e.changedTouches[0].clientX - rect.left
+          : (e as React.MouseEvent<HTMLCanvasElement>).clientX - rect.left) /
+        zoom;
+      const y =
+        (e instanceof TouchEvent
+          ? e.changedTouches[0].clientY - rect.top
+          : (e as React.MouseEvent<HTMLCanvasElement>).clientY - rect.top) /
+        zoom;
+
+      // Adjust for zoom level and canvas scale (if needed)
+      return {
+        x,
+        y,
+      };
+    },
+    [zoom]
+  );
+
+  //Handle mouse events
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement> | TouchEvent) => {
+      setDrawing(true);
+
+      const worldCoords = screenToWorldCoordinates(e);
+
+      const newElement: Element = {
+        id: Date.now(),
+        type: tool,
+        points: [worldCoords],
+      };
+      setTempElement(newElement);
+      console.log(newElement);
+    },
+    [tool, screenToWorldCoordinates]
+  );
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement> | TouchEvent) => {
+      if (
+        !drawing ||
+        !tempElement.points ||
+        !dynamicContext ||
+        !dynamicCanvasRef.current
+      )
+        return;
+
+      const worldCoords = screenToWorldCoordinates(e);
+      const updatedElement = {
+        ...tempElement,
+        points:
+          tempElement.type === "pencil"
+            ? [...tempElement.points, worldCoords]
+            : [tempElement.points[0], worldCoords],
+      };
+      setTempElement(updatedElement);
+
+      if (tool !== "pencil") {
+        dynamicContext.clearRect(
+          0,
+          0,
+          dynamicCanvasRef.current.width,
+          dynamicCanvasRef.current.height
+        );
+      }
+      drawElement(updatedElement as Element, dynamicContext, true);
+    },
+    [
+      drawing,
+      tempElement,
+      dynamicContext,
+      drawElement,
+      screenToWorldCoordinates,
+      tool,
+    ]
+  );
+
+  const handleMouseUp = useCallback(() => {
+    if (!drawing || !tempElement.type || !tempElement.points) return;
+
+    setDrawing(false);
+    const newElement = tempElement as Element;
+    if (newElement.points.length < 2) return;
+
+    setElements((prevElements) => ({
+      ...prevElements,
+      [currentPage]: [...(prevElements[currentPage] || []), newElement],
+    }));
+
+    if (staticContext) {
+      drawElement(newElement, staticContext);
+    }
+
+    // Clear the dynamic canvas after drawing the final element
+    if (dynamicContext && dynamicCanvasRef.current) {
+      dynamicContext.clearRect(
+        0,
+        0,
+        dynamicCanvasRef.current.width,
+        dynamicCanvasRef.current.height
+      );
+    }
+
+    setTempElement({});
+  }, [
+    drawing,
+    tempElement,
+    staticContext,
+    dynamicContext,
+    currentPage,
+    drawElement,
+  ]);
+
   // Page controls
   const handleNextPage = () =>
     currentPage < numPages && setCurrentPage((prev) => prev + 1);
   const handlePreviousPage = () =>
     currentPage > 1 && setCurrentPage((prev) => prev - 1);
+  useEffect(() => {
+    const handleMouseDownEvent = (e: MouseEvent) => {
+      e.preventDefault();
+      handleMouseDown(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+    };
+    const handleMouseMoveEvent = (e: MouseEvent) => {
+      e.preventDefault();
+      handleMouseMove(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+    };
+    const handleMouseUpEvent = (e: MouseEvent) => {
+      e.preventDefault();
+      handleMouseUp();
+    };
 
+    const handleTouchStartEvent = (e: TouchEvent) => {
+      handleMouseDown(e);
+    };
+    const handleTouchMoveEvent = (e: TouchEvent) => {
+      e.preventDefault();
+      handleMouseMove(e);
+    };
+    const handleTouchEndEvent = () => {
+      handleMouseUp();
+    };
+    if (!staticCanvasRef.current) return;
+
+    staticCanvasRef.current.addEventListener(
+      "touchstart",
+      handleTouchStartEvent,
+      {
+        passive: false,
+      }
+    );
+    staticCanvasRef.current.addEventListener(
+      "touchmove",
+      handleTouchMoveEvent,
+      {
+        passive: false,
+      }
+    );
+    staticCanvasRef.current.addEventListener("touchend", handleTouchEndEvent, {
+      passive: false,
+    });
+
+    staticCanvasRef.current.addEventListener("mousedown", handleMouseDownEvent);
+    staticCanvasRef.current.addEventListener("mousemove", handleMouseMoveEvent);
+    staticCanvasRef.current.addEventListener("mouseup", handleMouseUpEvent);
+
+    // Add wheel event listener for zooming
+
+    return () => {
+      if (!staticCanvasRef.current) return;
+      staticCanvasRef.current.removeEventListener(
+        "touchstart",
+        handleTouchStartEvent
+      );
+      staticCanvasRef.current.removeEventListener(
+        "touchmove",
+        handleTouchMoveEvent
+      );
+      staticCanvasRef.current.removeEventListener(
+        "touchend",
+        handleTouchEndEvent
+      );
+
+      staticCanvasRef.current.removeEventListener(
+        "mousedown",
+        handleMouseDownEvent
+      );
+      staticCanvasRef.current.removeEventListener(
+        "mousemove",
+        handleMouseMoveEvent
+      );
+      staticCanvasRef.current.removeEventListener(
+        "mouseup",
+        handleMouseUpEvent
+      );
+    };
+  }, [handleMouseDown, handleMouseMove, handleMouseUp]);
   return (
     <>
-      <NavBar />
+      <NavBar setTool={setTool} closeDocument={closeDocument} tool={tool} />
 
       <div className="canvas-container">
         <div className="canvas-wrapper">
           <canvas className="canvas" ref={PdfCanvasRef} />
-
+          <canvas
+            className="canvas canvas-overlay"
+            ref={dynamicCanvasRef}
+          ></canvas>
           <canvas
             className="canvas canvas-overlay"
             ref={staticCanvasRef}

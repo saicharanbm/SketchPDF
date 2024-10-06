@@ -49,7 +49,7 @@ const App: React.FC = () => {
   return (
     <>
       {pdfFile !== null && typeof pdfFile === "string" ? (
-        <PdfViewer pdfFile={pdfFile} />
+        <PdfViewer pdfFile={pdfFile} setPdfFile={setPdfFile} />
       ) : (
         <div
           className="file-upload-container"

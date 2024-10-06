@@ -125,7 +125,7 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none; /* Allows interaction with the underlying canvas */
+  /* Allows interaction with the underlying canvas */
   border: 3px solid black;
 }
 .controls-container {
